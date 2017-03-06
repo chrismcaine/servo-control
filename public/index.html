@@ -1,0 +1,48 @@
+﻿<!doctype html>
+<html>
+<head>
+    <title>Socket.IO Position</title>
+    <link href="css/bootstrap.min.css" rel="stylesheet" />
+    <meta name="viewport" value="width=device-width;initial-scale=1" />
+    <style type="text/css">
+      
+    </style>
+</head>
+<body class="" style="width:100vw; height:100vh; ">
+
+
+	<!-- <input type="range" style="height:10vh; width:80vw; margin:10vw;" class="form-control" min="-1" max="1" value="0" id="position" /> -->
+   Boo
+
+    <script src="js/lib/rx.all.min.js"></script>
+
+    <script src="http://192.168.1.11:8080/socket.io/socket.io.js"></script>
+   
+	<script>
+		(function() {
+			var socket = io.connect('http://192.168.1.11:8080/');
+
+			//var input = document.getElementById('position');
+			var body = document.querySelector
+			document.body.innerHTML = 'bar';
+			//var input$ = Rx.Observable.fromEvent(input, 'input').map(function(e){
+			//	return e.target.value;
+			//	});
+
+			var touch$ = Rx.Observable.fromEvent(document, 'touchmove').map(function(e) {
+				document.body.innerHTML = (new Date()).toString();
+				return e.changedTouches[0].pageX / window.innerWidth;
+			}).subscribe(function(val) { 
+//					document.body.innerHTML = val.toString();
+					socket.emit('servo:move', val);
+				 });
+
+
+			//input$.throttle(50).subscribe(function(val) {
+			//	socket.emit('servo:move', val);
+			//	});
+		})();
+	</script>
+
+</body>
+</html>
