@@ -12,29 +12,45 @@
 
 
 	<!-- <input type="range" style="height:10vh; width:80vw; margin:10vw;" class="form-control" min="-1" max="1" value="0" id="position" /> -->
-   Boo
+   
 
     <script src="js/lib/rx.all.min.js"></script>
 
-    <script src="http://192.168.1.11:8080/socket.io/socket.io.js"></script>
-   
+    <script src="http://192.168.1.111:8080/socket.io/socket.io.js"></script>
+
+    <script src="js/Utilities.js"></script>
 	<script>
 		(function() {
-			var socket = io.connect('http://192.168.1.11:8080/');
+			var socket = io.connect('http://192.168.1.111:8080/');
+
+            function Round(sigFig) {
+                const _c = Math.pow(10, isNaN(sigFig) ? 1 : parseInt(sigFig));
+                return val => Math.round(val * _c) / _c;
+            }
+            function ForEach(task) {
+                var _task = task;
+                return function (obj) {
+                    for (var key in obj) {
+                        obj[key] = _task(obj[key]);
+                    }
+                    return obj; 
+                }
+            }
 
 			//var input = document.getElementById('position');
-			var body = document.querySelector
-			document.body.innerHTML = 'bar';
+		
 			//var input$ = Rx.Observable.fromEvent(input, 'input').map(function(e){
 			//	return e.target.value;
 			//	});
 
-			var touch$ = Rx.Observable.fromEvent(document, 'touchmove').map(function(e) {
-				document.body.innerHTML = (new Date()).toString();
-				return e.changedTouches[0].pageX / window.innerWidth;
-			}).subscribe(function(val) { 
-//					document.body.innerHTML = val.toString();
-					socket.emit('servo:move', val);
+            var touch$ = Rx.Observable.fromEvent(document, 'touchmove').map(evt => { return { x: evt.changedTouches[0].pageX, y: evt.changedTouches[0].pageY }; });
+            var mouse$ = Rx.Observable.fromEvent(document, 'mousemove').map(evt => { return { x: evt.clientX, y: evt.clientY }; });
+                            
+            var coords$ = Rx.Observable.merge(touch$, mouse$).map(function (obj) { obj.x = obj.x / window.innerWidth; obj.y = obj.y / window.innerHeight; return obj; });
+
+            coords$.map(ForEach(Round(3))).subscribe(function (obj) { 
+                document.body.innerHTML = JSON.stringify(obj);// Utilities.Bind('{ x : {{x}}, y : {{y}} }', obj);
+					socket.emit('servo:move', obj);
 				 });
 
 
