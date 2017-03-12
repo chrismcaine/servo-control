@@ -5,7 +5,9 @@ const fs = require('fs');
 
 const hasSettings = fs.existsSync('settings.json');
 
-if (!hasSettings) {
+const settings = JSON.parse(fs.readFileSync('settings.json', 'utf8'));
+
+if (settings.withServos === true) {
     console.log('hasSettings');
     var i2cBus = require('i2c-bus');
     var driver = require('pca9685').Pca9685Driver;
@@ -27,17 +29,19 @@ if (!hasSettings) {
     console.log('local');
 }
 
-function moveServo(val) {
-    // where val is 0 => 1
-    //	val = val + 1;
-    // val is 0 => 2
-    
-    //console.log(val);
+function MapToServoValue(val) {
+    return parseInt(Math.floor(val * 2000) + 500);
+}
+
+function moveServo(values) {
     if (pwm !== null) {
-        val = Math.round(val * 2000) + 500;
-        pwm.setPulseLength(0, parseInt(val));
+        values.forEach(function (item, index) {
+            pwm.setPulseLength(item[0], MapToServoValue(item[1])); 
+        });
     } else {
-        console.log(val)
+        values.forEach(function (item, index) {
+            console.log(item[0], MapToServoValue(item[1]));
+        });
     }
 }
 

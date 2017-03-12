@@ -1,15 +1,26 @@
 
 Looking at ways of handling streams of servo position data.
 ===========================================================
-s
+
 1). Multi-touch, orientation options
 2). Convert values to streams
 3). Filter out of range values
 4). Map inputs to single range value -1.000 to 1.000
 5)  Broadcast
 
-1). Receive
+1). Receive					ensure streams are shared where necessary
 2). Collect input information
 3). Filter for valid values
-4). Route to correct channel
+4). Route to correct channel$
 5). Map values to output device
+
+
+Admin
+=====
+
+1). Select an input type
+2). Map to a servo channel
+3). Store settings back to server
+
+4). On connection load settings
+5). 

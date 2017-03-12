@@ -5,23 +5,28 @@
     <link href="css/bootstrap.min.css" rel="stylesheet" />
     <meta name="viewport" value="width=device-width;initial-scale=1" />
     <style type="text/css">
-      
+
     </style>
 </head>
 <body class="" style="width:100vw; height:100vh; ">
+    <div id="output"></div>
+    <div id="ball" style="background: #666666; position:absolute; border-radius:30px; width:30px; height:30px;">
 
+    </div>
 
-	<!-- <input type="range" style="height:10vh; width:80vw; margin:10vw;" class="form-control" min="-1" max="1" value="0" id="position" /> -->
-   
+    <!-- <input type="range" style="height:10vh; width:80vw; margin:10vw;" class="form-control" min="-1" max="1" value="0" id="position" /> -->
+
 
     <script src="js/lib/rx.all.min.js"></script>
-
     <script src="http://192.168.1.111:8080/socket.io/socket.io.js"></script>
 
+    <!--    <script src="http://192.168.43.92:8080/socket.io/socket.io.js"></script>-->
+
     <script src="js/Utilities.js"></script>
-	<script>
-		(function() {
-			var socket = io.connect('http://192.168.1.111:8080/');
+    <script>
+        (function () {
+            var url = 'http://192.168.1.111:8080/';
+            var socket = io.connect(url);
 
             function Round(sigFig) {
                 const _c = Math.pow(10, isNaN(sigFig) ? 1 : parseInt(sigFig));
@@ -33,32 +38,85 @@
                     for (var key in obj) {
                         obj[key] = _task(obj[key]);
                     }
-                    return obj; 
+                    return obj;
                 }
             }
 
-			//var input = document.getElementById('position');
-		
-			//var input$ = Rx.Observable.fromEvent(input, 'input').map(function(e){
-			//	return e.target.value;
-			//	});
+            function ToServoPositions(obj) {
+                var result = [];
+                if (obj.x !== undefined) result.push([0, obj.x]);
+                if (obj.y !== undefined) result.push([1, obj.y]);
+                return result;
+            }
+
+            function ToNormalizedValues(obj) { obj.x = obj.x / window.innerWidth; obj.y = obj.y / window.innerHeight; return obj; }
+
+            var elOutput = document.getElementById('output');
 
             var touch$ = Rx.Observable.fromEvent(document, 'touchmove').map(evt => { return { x: evt.changedTouches[0].pageX, y: evt.changedTouches[0].pageY }; });
             var mouse$ = Rx.Observable.fromEvent(document, 'mousemove').map(evt => { return { x: evt.clientX, y: evt.clientY }; });
-                            
-            var coords$ = Rx.Observable.merge(touch$, mouse$).map(function (obj) { obj.x = obj.x / window.innerWidth; obj.y = obj.y / window.innerHeight; return obj; });
 
-            coords$.map(ForEach(Round(3))).subscribe(function (obj) { 
-                document.body.innerHTML = JSON.stringify(obj);// Utilities.Bind('{ x : {{x}}, y : {{y}} }', obj);
-					socket.emit('servo:move', obj);
-				 });
+            var coords$ = Rx.Observable.merge(touch$, mouse$).map(ToNormalizedValues);
+
+            coords$.map(ForEach(Round(3))).subscribe(function (obj) {
+                elOutput.innerHTML = JSON.stringify(obj);
+                
+            
+            });
 
 
-			//input$.throttle(50).subscribe(function(val) {
-			//	socket.emit('servo:move', val);
-			//	});
-		})();
-	</script>
+
+
+
+            /// 1). repeat a movement based on keyframes and magnitude
+
+            var elBall = document.getElementById('ball');
+
+            var mouseClick$ = Rx.Observable.merge(Rx.Observable.fromEvent(document, 'mousedown').map(true), Rx.Observable.fromEvent(document, 'mouseup').map(false));
+
+            var ball$ = Rx.Observable.fromEvent(document, 'mousemove').withLatestFrom(mouseClick$).filter(arr => arr[1]).map(arr => arr[0])
+                .map(evt => { return { x: evt.clientX, y: evt.clientY, t: evt.timeStamp }; })
+                .scan(function (obj, item) {
+                    if (obj.startTime == null) {
+                        obj.startTime = item.t;
+                    }
+                    item._t = item.t - obj.startTime;
+                    obj.keyFrames.push(item);
+                    obj.startTime = item.t;
+                    return obj;
+                }, { startTime: null, keyFrames: [] });
+            mouseClick$.subscribe(x => console.log(x));
+
+            ball$.subscribe(x => console.log(x));
+
+            var replay$ = mouseClick$.filter(x => !x).withLatestFrom(ball$).map(x => x[1].keyFrames);
+
+            //  replay$.subscribe(x => console.log(x));
+
+            var keyFrames$ = replay$.flatMap(function (keyFrames) {
+                var _keyFrames = keyFrames.reverse();
+                var _keyFrames$ = new Rx.Subject();
+
+                function createNext() {
+                    var next = _keyFrames.pop();
+                    if (next !== undefined) {
+                        setTimeout(function () {
+                            _keyFrames$.onNext(next);
+                            createNext();
+                        }, next._t);
+                    }
+                }
+
+                createNext();
+
+                return _keyFrames$;
+            });
+
+
+            keyFrames$.map(ToNormalizedValues).map(ForEach(Round(3))).map(ToServoPositions).do(x => console.log(x)).subscribe(x => socket.emit('servo:move', x));
+
+        })();
+    </script>
 
 </body>
 </html>
