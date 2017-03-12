@@ -1,109 +1,83 @@
-﻿var View = function (template) {
-    var template = $('#' + template).html();
-    Mustache.parse(template);   // optional, speeds up future uses
-    this.Render = function (model) {
-        return Mustache.render(template, model);
+﻿(function () {
+    var socket = io.connect(window.location.origin);
+
+    function Round(sigFig) {
+        const _c = Math.pow(10, isNaN(sigFig) ? 1 : parseInt(sigFig));
+        return val => Math.round(val * _c) / _c;
     }
-}
-
-var trackItemView = new View('track');
-
-var socket = io.connect('http://192.168.1.11:8080/');
-
-var playlist = new Playlist($('#playlist'), trackItemView);
-var tracks = new Tracks(trackItemView);
-
-var syncRequest$ = new Rx.Subject();
-syncRequest$.throttle(2000).subscribe(playlist.Sync);
-
-var searchRequest$ = Rx.Observable.fromEvent($('#txtSearch'), 'input')
-        .map(function (e) { return e.target.value; })
-        .filter(function (e) { return e.length > 2; })
-        .debounce(800);
-
-
-var allClickEvents$ = Rx.Observable.fromEvent(document.body, 'click').filter(Utilities.ByTag('button')).map(function (e) { return e.target.dataset; });
-
-var transport$ = allClickEvents$.filter(Utilities.IsTransportCtrl);
-transport$.subscribe(function (data) {  socket.emit('transport', data); });
-
-var removeItemClick$ = allClickEvents$.filter(Utilities.ByDataType(CTRLS.REMOVE));
-removeItemClick$.subscribe(function (data) {
-    playlist.Remove(data.id);
-    playlist.Draw(tracks.Items);
-    playlist.Sync();
-});
-
-
-var sortables = [];
-$('ul.tracks').each(function (index, item) {
-    var sortable = new Sortable(item, {
-        group: {
-            name: 'sortable',
-            pull: 'clone',
-            put: false,
-	    handle : '.drag'
+    function ForEach(task) {
+        var _task = task;
+        return function (obj) {
+            for (var key in obj) {
+                obj[key] = _task(obj[key]);
+            }
+            return obj;
         }
-    });
-    sortables.push(sortable);
-});
-
-$('ul.playlist').each(function (index, item) {
-    var sortable = new Sortable(item, {
-        group: 'sortable',
-        handle: '.drag',
-        onAdd: function (evt) {
-            var _playlist = [];
-            $('ul.playlist li').each(function (index, item) {
-                _playlist.push(item.dataset.id);
-            });
-
-            playlist.Fill(_playlist);
-            syncRequest$.onNext(true);
-        },
-        onUpdate: function () {
-            var _playlist = [];
-            $('ul.playlist li').each(function (index, item) {
-                _playlist.push(item.dataset.id);
-            });
-
-            playlist.Fill(_playlist);
-            syncRequest$.onNext(true);
-        }
-    });
-    sortables.push(sortable);
-});
-
-searchRequest$.subscribe(function (value) {
-    console.log(value);
-    socket.emit('search:query', value);// ['title', value]);
-});
-
-socket.on('transport:now-playing', function (track) {
-    if (track) {
-        $('#now-playing-track').text(track.title + ' by ' + track.artist[0]);
-        playlist.NowPlaying(track.id);
     }
-});
 
-socket.on('playlist:load', function (data) {
-    console.log('pl:load', data);
-    tracks.Fill(data.Tracks);
-    playlist.Fill(data.Playlist);
-    playlist.Draw(tracks.Items);
-});
+    function ToServoPositions(obj) {
+        var result = [];
+        if (obj.x !== undefined) result.push([0, obj.x]);
+        if (obj.y !== undefined) result.push([1, obj.y]);
+        return result;
+    }
 
-socket.on('search:result', function (data) {
-    console.log('Result: ', data);
-    tracks.Draw($('#tracks'), data.result);
-    tracks.FillFromArray(data.result);
-});
+    function ToNormalizedValues(obj) { obj.x = obj.x / window.innerWidth; obj.y = obj.y / window.innerHeight; return obj; }
 
-socket.on('sync:message', function (message) {
-    $('#message').text(message);
-});
-var timeEl = $('#time');
-socket.on('progress', function(data) {
-	timeEl.text(data.timemark.substring(3,8));
-	console.log(data);
-});
+    var elOutput = document.getElementById('output');
+
+    var touch$ = Rx.Observable.fromEvent(document, 'touchmove').map(evt => { return { x: evt.changedTouches[0].pageX, y: evt.changedTouches[0].pageY }; });
+    var mouse$ = Rx.Observable.fromEvent(document, 'mousemove').map(evt => { return { x: evt.clientX, y: evt.clientY }; });
+
+    var coords$ = Rx.Observable.merge(touch$, mouse$).map(ToNormalizedValues);
+
+    coords$.map(ForEach(Round(3))).subscribe(function (obj) {
+        elOutput.innerHTML = JSON.stringify(obj);
+    });
+
+    var elBall = document.getElementById('ball');
+
+    var mouseClick$ = Rx.Observable.merge(Rx.Observable.fromEvent(document, 'mousedown').map(true), Rx.Observable.fromEvent(document, 'mouseup').map(false));
+
+    var ball$ = Rx.Observable.fromEvent(document, 'mousemove').withLatestFrom(mouseClick$).filter(arr => arr[1]).map(arr => arr[0])
+        .map(evt => { return { x: evt.clientX, y: evt.clientY, t: evt.timeStamp }; })
+        .scan(function (obj, item) {
+            if (obj.startTime == null) {
+                obj.startTime = item.t;
+            }
+            item._t = item.t - obj.startTime;
+            obj.keyFrames.push(item);
+            obj.startTime = item.t;
+            return obj;
+        }, { startTime: null, keyFrames: [] });
+    mouseClick$.subscribe(x => console.log(x));
+
+   // ball$.subscribe(x => console.log(x));
+
+    var replay$ = mouseClick$.filter(x => !x).withLatestFrom(ball$).map(x => x[1].keyFrames);
+
+    var keyFrames$ = replay$.flatMap(function (keyFrames) {
+        var _keyFrames = keyFrames.reverse();
+        var _keyFrames$ = new Rx.Subject();
+
+        function createNext() {
+            var next = _keyFrames.pop();
+            if (next !== undefined) {
+                setTimeout(function () {
+                    _keyFrames$.onNext(next);
+                    createNext();
+                }, next._t);
+            }
+        }
+        createNext();
+        return _keyFrames$;
+    });
+
+
+    keyFrames$.map(ToNormalizedValues)
+        .map(ForEach(Round(3)))
+        .map(ToServoPositions)
+        //.do(x => console.log(x))
+        .subscribe(x => socket.emit('servo:move', x));
+
+})();
