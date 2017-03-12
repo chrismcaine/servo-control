@@ -18,7 +18,7 @@
     function ToServoPositions(obj) {
         var result = [];
         if (obj.x !== undefined) result.push([0, obj.x]);
-        if (obj.y !== undefined) result.push([1, obj.y]);
+        if (obj.y !== undefined) result.push([4, obj.y]);
         return result;
     }
 
@@ -31,9 +31,14 @@
 
     var coords$ = Rx.Observable.merge(touch$, mouse$).map(ToNormalizedValues);
 
-    coords$.map(ForEach(Round(3))).subscribe(function (obj) {
-        elOutput.innerHTML = JSON.stringify(obj);
-    });
+    coords$.map(ForEach(Round(3)))
+	 .map(ToServoPositions)
+        .do(x => console.log(x))
+	.throttle(100)
+        .subscribe(x => socket.emit('servo:move', x));
+//.subscribe(function (obj) {
+  //      elOutput.innerHTML = JSON.stringify(obj);
+    //});
 
     var elBall = document.getElementById('ball');
 
